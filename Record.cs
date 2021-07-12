@@ -22,8 +22,9 @@ namespace UnityLogConverter
         public List<string> stacktrace = new List<string>();
         public string filename;
         public int line = -1;
+        public int sourceLine = -1;
 
-        public void SetParameters(SqliteParameter paramMessage, SqliteParameter paramSeverity, SqliteParameter paramFilename, SqliteParameter paramLine, SqliteParameter paramStacktrace)
+        public void SetParameters(SqliteParameter paramMessage, SqliteParameter paramSeverity, SqliteParameter paramFilename, SqliteParameter paramLine, SqliteParameter paramStacktrace, SqliteParameter paramSourceLine)
         {
             paramMessage.Value = string.Join('\n', message);
             paramSeverity.Value = (int)severity;
@@ -46,6 +47,7 @@ namespace UnityLogConverter
             paramFilename.Value = dbFilename;
             paramLine.Value = dbLine;
             paramStacktrace.Value = string.Join('\n', stacktrace);
+            paramSourceLine.Value = sourceLine;
         }
     }
 }

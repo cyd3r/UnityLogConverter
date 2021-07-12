@@ -34,12 +34,13 @@ namespace UnityLogConverter
                 var cmd = conn.CreateCommand();
                 // maybe add stacktrace
                 cmd.CommandText = @"
-                CREATE TABLE IF NOT EXISTS entries (
+                CREATE TABLE entries (
                     message TEXT,
                     severity INTEGER,
                     filename TEXT,
                     lineNumber INTEGER,
-                    stacktrace TEXT
+                    stacktrace TEXT,
+                    source_line INTEGER
                 )
                 ";
                 cmd.ExecuteNonQuery();
@@ -55,27 +56,38 @@ namespace UnityLogConverter
                     {
                         var cmdInsert = conn.CreateCommand();
                         cmdInsert.CommandText = @"
-                        INSERT INTO entries (message, severity, filename, lineNumber, stacktrace)
-                        VALUES ($message, $severity, $filename, $lineNumber, $stacktrace)
+                        INSERT INTO entries (message, severity, filename, lineNumber, stacktrace, source_line)
+                        VALUES ($message, $severity, $filename, $lineNumber, $stacktrace, $source)
                         ";
                         var paramMsg = cmdInsert.CreateParameter();
                         paramMsg.ParameterName = "message";
                         cmdInsert.Parameters.Add(paramMsg);
+
                         var paramSeverity = cmdInsert.CreateParameter();
                         paramSeverity.ParameterName = "severity";
                         cmdInsert.Parameters.Add(paramSeverity);
+
                         var paramFilename = cmdInsert.CreateParameter();
                         paramFilename.ParameterName = "filename";
                         cmdInsert.Parameters.Add(paramFilename);
+
                         var paramLineNumber = cmdInsert.CreateParameter();
                         paramLineNumber.ParameterName = "lineNumber";
                         cmdInsert.Parameters.Add(paramLineNumber);
+
                         var paramStacktrace = cmdInsert.CreateParameter();
                         paramStacktrace.ParameterName = "stacktrace";
                         cmdInsert.Parameters.Add(paramStacktrace);
 
+                        var paramSourceLine = cmdInsert.CreateParameter();
+                        paramSourceLine.ParameterName = "source";
+                        cmdInsert.Parameters.Add(paramSourceLine);
+
+                        int logLineNumber = -1;
                         while ((line = logFile.ReadLine()) != null)
                         {
+                            logLineNumber++;
+
                             if (string.IsNullOrWhiteSpace(line))
                             {
                             }
@@ -103,7 +115,7 @@ namespace UnityLogConverter
                                 currentRecord.filename = match.Groups[1].Value;
                                 currentRecord.line = Convert.ToInt32(match.Groups[2].Value);
 
-                                currentRecord.SetParameters(paramMsg, paramSeverity, paramFilename, paramLineNumber, paramStacktrace);
+                                currentRecord.SetParameters(paramMsg, paramSeverity, paramFilename, paramLineNumber, paramStacktrace, paramSourceLine);
 
                                 cmdInsert.ExecuteNonQuery();
 
@@ -112,6 +124,8 @@ namespace UnityLogConverter
                             else
                             {
                                 currentRecord.message.Add(line);
+                                if (currentRecord.sourceLine == -1)
+                                    currentRecord.sourceLine = logLineNumber;
                             }
                         }
                         transaction.Commit();
