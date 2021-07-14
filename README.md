@@ -58,6 +58,3 @@ The binary will be located in `bin/Release/netcoreapp3.1/win-x64/publish`.
 ## Known issues/TODO
 
 + Not tested on other architectures, but in the build process it should work if you replace `win-x64` with your architecture
-+ Not all warnings are correctly parsed
-+ The first wall of text is not handled yet and included in the first log message
-+ Support multiple log sessions?

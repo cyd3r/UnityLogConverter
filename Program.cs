@@ -39,7 +39,15 @@ namespace UnityLogConverter
                     source_line INTEGER NOT NULL
                 )
                 ";
-                cmd.ExecuteNonQuery();
+                try
+                {
+                    cmd.ExecuteNonQuery();
+                }
+                catch (SqliteException)
+                {
+                    Console.WriteLine("Could not create table. Maybe the database already exists?");
+                    return;
+                }
 
                 using (var logFile = new StreamReader(inputPath))
                 {
