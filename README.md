@@ -10,6 +10,38 @@ The tool needs to be run from the command line:
 
     UnityLogConverter.exe Player.log output.sqlite
 
+This will create an SQLite database file named `output.sqlite`.
+
+## Example Queries
+
+Here are some example queries that could be done with the generated database:
+
+``` sql
+-- select unique messages
+SELECT *, count(*) AS occurences
+FROM entries
+GROUP BY coalesce(filename, ROWID), line
+ORDER BY source_line;
+
+-- how many messages of which type occured?
+SELECT severity, count(*) AS occurences
+FROM entries
+GROUP BY severity
+ORDER BY severity;
+
+-- show only fatal error messages from latest to first
+SELECT *
+FROM entries
+WHERE severity >= 2
+ORDER BY source_line DESC;
+
+-- search for messages that contain a certain string
+SELECT *
+FROM entries
+WHERE message like "%kinematic body%"
+ORDER BY source_line;
+```
+
 ## Development
 
 This tool is written as a .NET Core 3.1 application, so you need at least this version of dotnet. You can get it here: https://dotnet.microsoft.com/download

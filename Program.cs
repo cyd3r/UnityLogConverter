@@ -1,16 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 
 namespace UnityLogConverter
 {
     class Program
     {
-        static Regex rxLocation = new Regex(@"\(Filename:\ (.*)\ Line:\ (\d+)\)", RegexOptions.Compiled);
-        static Regex rxStacktrace = new Regex(@"^[^\.:\ ]+(?:\.[^\.:\ ]+)+:.*$|^\ \ at\ .*$", RegexOptions.Compiled);
-
         static void Main(string[] args)
         {
             if (args.Length != 2)
@@ -35,100 +31,87 @@ namespace UnityLogConverter
                 // maybe add stacktrace
                 cmd.CommandText = @"
                 CREATE TABLE entries (
-                    message TEXT,
+                    message TEXT NOT NULL,
                     severity INTEGER,
                     filename TEXT,
-                    lineNumber INTEGER,
+                    line INTEGER,
                     stacktrace TEXT,
-                    source_line INTEGER
+                    source_line INTEGER NOT NULL
                 )
                 ";
                 cmd.ExecuteNonQuery();
 
                 using (var logFile = new StreamReader(inputPath))
                 {
-                    string line;
-                    Match match;
-                    Record currentRecord = new Record();
+                    string lastLine, line;
                     var records = new List<Record>();
 
                     using (var transaction = conn.BeginTransaction())
                     {
                         var cmdInsert = conn.CreateCommand();
                         cmdInsert.CommandText = @"
-                        INSERT INTO entries (message, severity, filename, lineNumber, stacktrace, source_line)
-                        VALUES ($message, $severity, $filename, $lineNumber, $stacktrace, $source)
+                        INSERT INTO entries (message, severity, filename, line, stacktrace, source_line)
+                        VALUES ($message, $severity, $filename, $line, $stacktrace, $source)
                         ";
-                        var paramMsg = cmdInsert.CreateParameter();
-                        paramMsg.ParameterName = "message";
-                        cmdInsert.Parameters.Add(paramMsg);
+                        var paramMsg = cmdInsert.Parameters.Add("message", SqliteType.Text);
+                        var paramSeverity = cmdInsert.Parameters.Add("severity", SqliteType.Integer);
+                        var paramFilename = cmdInsert.Parameters.Add("filename", SqliteType.Text);
+                        var paramLine = cmdInsert.Parameters.Add("line", SqliteType.Integer);
+                        var paramStacktrace = cmdInsert.Parameters.Add("stacktrace", SqliteType.Text);
+                        var paramSourceLine = cmdInsert.Parameters.Add("source", SqliteType.Integer);
 
-                        var paramSeverity = cmdInsert.CreateParameter();
-                        paramSeverity.ParameterName = "severity";
-                        cmdInsert.Parameters.Add(paramSeverity);
-
-                        var paramFilename = cmdInsert.CreateParameter();
-                        paramFilename.ParameterName = "filename";
-                        cmdInsert.Parameters.Add(paramFilename);
-
-                        var paramLineNumber = cmdInsert.CreateParameter();
-                        paramLineNumber.ParameterName = "lineNumber";
-                        cmdInsert.Parameters.Add(paramLineNumber);
-
-                        var paramStacktrace = cmdInsert.CreateParameter();
-                        paramStacktrace.ParameterName = "stacktrace";
-                        cmdInsert.Parameters.Add(paramStacktrace);
-
-                        var paramSourceLine = cmdInsert.CreateParameter();
-                        paramSourceLine.ParameterName = "source";
-                        cmdInsert.Parameters.Add(paramSourceLine);
-
-                        int logLineNumber = -1;
+                        bool containsUnknownSeverity = false;
+                        int logLineNumber = 0;
+                        Record record = new Record(0);
+                        lastLine = logFile.ReadLine();
                         while ((line = logFile.ReadLine()) != null)
                         {
-                            logLineNumber++;
-
-                            if (string.IsNullOrWhiteSpace(line))
+                            record.ReadLine(lastLine, line);
+                            if (record.isComplete)
                             {
-                            }
-                            else if (rxStacktrace.Match(line).Success)
-                            {
-                                if (line.StartsWith("  at"))
+                                // severity
+                                paramMsg.Value = record.messageStr;
+                                if (record.severity == Severity.Unknown)
                                 {
-                                    currentRecord.severity = Severity.Exception;
-                                    // "  at ".Length == 5
-                                    line = line.Substring(5);
+                                    paramSeverity.Value = DBNull.Value;
+                                    containsUnknownSeverity = true;
                                 }
                                 else
                                 {
-                                    if (line.StartsWith("UnityEngine.Debug:Log("))
-                                        currentRecord.severity = Severity.Info;
-                                    else if (line.StartsWith("UnityEngine.Debug:LogWarning"))
-                                        currentRecord.severity = Severity.Warning;
-                                    else if (line.StartsWith("UnityEngine.Debug:LogError"))
-                                        currentRecord.severity = Severity.Warning;
+                                    paramSeverity.Value = (int)record.severity;
                                 }
-                                currentRecord.stacktrace.Add(line);
-                            }
-                            else if ((match = rxLocation.Match(line)).Success)
-                            {
-                                currentRecord.filename = match.Groups[1].Value;
-                                currentRecord.line = Convert.ToInt32(match.Groups[2].Value);
-
-                                currentRecord.SetParameters(paramMsg, paramSeverity, paramFilename, paramLineNumber, paramStacktrace, paramSourceLine);
+                                // location (filename & linenumber)
+                                if (record.origin.HasValue)
+                                {
+                                    paramFilename.Value = record.origin.Value.filename;
+                                    paramLine.Value = record.origin.Value.line;
+                                }
+                                else
+                                {
+                                    paramFilename.Value = DBNull.Value;
+                                    paramLine.Value = DBNull.Value;
+                                }
+                                // stacktrace
+                                if (record.stacktrace == null)
+                                    paramStacktrace.Value = DBNull.Value;
+                                else
+                                    paramStacktrace.Value = record.stacktrace;
+                                // source line
+                                paramSourceLine.Value = record.sourceLine;
 
                                 cmdInsert.ExecuteNonQuery();
 
-                                currentRecord = new Record();
+                                record = new Record(logLineNumber);
                             }
-                            else
-                            {
-                                currentRecord.message.Add(line);
-                                if (currentRecord.sourceLine == -1)
-                                    currentRecord.sourceLine = logLineNumber;
-                            }
+                            lastLine = line;
+                            logLineNumber++;
                         }
                         transaction.Commit();
+
+                        if (containsUnknownSeverity)
+                        {
+                            Console.WriteLine("WARNING: Could not determine severity for at least one message!");
+                        }
                     }
                 }
             }
